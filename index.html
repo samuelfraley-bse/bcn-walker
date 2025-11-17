@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cool Walks – Shade Route Game</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB7ywUK1PmSrRMq2pQJghzH0Je3IU-Z_wg&loading=async" async defer></script>
+  
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+      background: #1a1a1a;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    #sidebar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 320px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+      overflow-y: auto;
+      box-shadow: 4px 0 12px rgba(0,0,0,0.3);
+      z-index: 100;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .goal {
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      opacity: 0.95;
+    }
+
+    .section {
+      background: rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      backdrop-filter: blur(10px);
+    }
+
+    .section h3 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      opacity: 0.9;
+      font-weight: 600;
+    }
+
+    .instructions {
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    .instructions li {
+      margin-left: 18px;
+      margin-bottom: 6px;
+    }
+
+    #status-label {
+      background: rgba(255,255,255,0.25);
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 16px;
+      text-align: center;
+      transition: background 0.3s ease;
+    }
+
+    .metrics {
+      display: grid;
+      gap: 8px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .metric-row:last-child {
+      border-bottom: none;
+    }
+
+    .metric-label {
+      opacity: 0.85;
+    }
+
+    .metric-value {
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .map-hints {
+      font-size: 12px;
+      line-height: 1.5;
+      opacity: 0.85;
+    }
+
+    .map-hints li {
+      margin-left: 18px;
+      margin-bottom: 4px;
+    }
+
+    #reset-btn {
+      width: 100%;
+      padding: 14px;
+      background: rgba(255,255,255,0.25);
+      color: white;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    #reset-btn:hover {
+      background: rgba(255,255,255,0.35);
+      border-color: rgba(255,255,255,0.5);
+      transform: translateY(-1px);
+    }
+
+    #map-container {
+      position: absolute;
+      left: 320px;
+      bottom: 0;
+      right: 0;
+      height: 35vh;
+      background: #2a2a2a;
+      border-top: 3px solid rgba(255,255,255,0.1);
+      z-index: 50;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    #fog-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      background: 
+        radial-gradient(
+          circle 350px at var(--fog-x, 50%) var(--fog-y, 50%),
+          transparent 0%,
+          rgba(0, 0, 0, 0.05) 30%,
+          rgba(0, 0, 0, 0.6) 55%,
+          rgba(0, 0, 0, 0.9) 100%
+        );
+      transition: background 0.4s ease-out;
+      animation: fogSwirl 8s ease-in-out infinite;
+    }
+
+    @keyframes fogSwirl {
+      0%, 100% {
+        filter: blur(0px);
+      }
+      50% {
+        filter: blur(2px);
+      }
+    }
+
+    #mini-map {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 200px;
+      height: 140px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      border: 2px solid rgba(255,255,255,0.2);
+      z-index: 20;
+      animation: miniMapPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes miniMapPulse {
+      0%, 100% {
+        border-color: rgba(255,255,255,0.2);
+      }
+      50% {
+        border-color: rgba(33,150,243,0.5);
+      }
+    }
+
+    #street-view-container {
+      position: absolute;
+      left: 320px;
+      top: 0;
+      right: 0;
+      bottom: 35vh;
+      background: #1a1a1a;
+      z-index: 40;
+    }
+
+    #street-view {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #street-view::before {
+      content: 'Street View - Click to walk';
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 10;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    .player-marker {
+      width: 32px;
+      height: 32px;
+      position: relative;
+    }
+
+    .player-marker-inner {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: #2196f3;
+      border: 3px solid white;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px rgba(33, 150, 243, 0.8);
+    }
+
+    .player-marker-pulse {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border: 2px solid #2196f3;
+      border-radius: 50%;
+      animation: pulse 1.8s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(0.5);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(1.5);
+        opacity: 0;
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        transform: scale(0.8);
+        opacity: 0;
+      }
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .arrow-pulse {
+      animation: arrowPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes arrowPulse {
+      0%, 100% {
+        filter: drop-shadow(0 3px 10px rgba(33,150,243,0.9));
+      }
+      50% {
+        filter: drop-shadow(0 3px 20px rgba(33,150,243,1));
+      }
+    }
+
+    .dev-note {
+      background: rgba(255, 193, 7, 0.2);
+      border-left: 3px solid #ffc107;
+      padding: 8px 12px;
+      font-size: 11px;
+      margin-top: 12px;
+      border-radius: 4px;
+      opacity: 0.9;
+    }
+
+    @media (max-width: 1200px) {
+      #app {
+        flex-direction: column;
+      }
+      #sidebar {
+        width: 100%;
+        height: auto;
+        max-height: 30vh;
+        position: relative;
+      }
+      #street-view-container {
+        left: 0;
+        top: 30vh;
+        bottom: 35vh;
+      }
+      #map-container {
+        left: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <h1>Cool Walks – Shade Route Game</h1>
+      
+      <p class="goal">
+        <strong>Goal:</strong> Walk from the green start marker to the red goal marker.
+        You only see detailed shade for streets near you – everything else is in the fog.
+      </p>
+
+      <div class="section">
+        <h3>How to play</h3>
+        <ul class="instructions">
+          <li>Click on Street View OR the map to move step by step</li>
+          <li>Follow the arrow – it points from you toward the goal</li>
+          <li>Try to keep your route short but with high shade</li>
+        </ul>
+      </div>
+
+      <div id="status-label">Click anywhere nearby to start walking</div>
+
+      <div class="section">
+        <h3>Optimal distance</h3>
+        <div class="metrics">
+          <div class="metric-row">
+            <span class="metric-label">Distance:</span>
+            <span class="metric-value"><span id="opt-dist">—</span> m</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Shade score:</span>
+            <span class="metric-value" id="opt-shade">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Your route – m</h3>
+        <div class="metrics">
+          <div class="metric-row">
+            <span class="metric-label">Distance:</span>
+            <span class="metric-value"><span id="player-dist">—</span> m</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Shade score:</span>
+            <span class="metric-value" id="player-shade">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Path efficiency:</span>
+            <span class="metric-value" id="player-efficiency">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Scenic score:</span>
+            <span class="metric-value" id="scenic-score">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Backroads score:</span>
+            <span class="metric-value" id="backroads-score">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Nature score:</span>
+            <span class="metric-value" id="nature-score">—</span>
+          </div>
+        </div>
+        <div class="dev-note">
+          ⚠️ Scenic, backroads, and nature scores are placeholder random values. Replace with real data later.
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Map hints</h3>
+        <ul class="map-hints">
+          <li>Dark fog everywhere except a spotlight around your current marker</li>
+          <li>The large shade badge near your marker tells you how cool or hot it feels</li>
+          <li>Yellow line = your chosen path</li>
+        </ul>
+      </div>
+
+      <button id="reset-btn">Reset route</button>
+
+      <p style="margin-top: 16px; font-size: 11px; opacity: 0.7;">
+        Open dev tools console to see debug logs (F12).
+      </p>
+    </div>
+
+    <div id="street-view-container">
+      <div id="street-view"></div>
+    </div>
+
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="fog-overlay"></div>
+      <div id="mini-map"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
